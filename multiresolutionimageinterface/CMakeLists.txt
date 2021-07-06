@@ -51,6 +51,14 @@ if(WIN32)
 add_definitions(-DNOMINMAX)
 endif(WIN32)
 
+IF(APPLE)
+  set(prefix "ASAP.app/Contents")
+  set(INSTALL_RUNTIME_DIR "${prefix}/MacOS")
+  set(INSTALL_RESOURCE_DIR "${prefix}/Frameworks")
+  set(INSTALL_CMAKE_DIR "${prefix}/Resources")
+ENDIF(APPLE)
+
+
 add_library(jpeg2kcodec SHARED JPEG2000Codec.h JPEG2000Codec.cpp)
 generate_export_header(jpeg2kcodec)
 set_target_properties(jpeg2kcodec PROPERTIES DEBUG_POSTFIX _d)
@@ -95,7 +103,14 @@ endif(WIN32)
 option(WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON "Wrap multi-resolution image reading in Python" OFF)
 if(WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON)
   add_definitions(-DSWIG_PYTHON_INTERPRETER_NO_DEBUG)
-  find_package(PythonLibs REQUIRED)
+
+  # IF(APPLE)
+    # set(Python_FIND_ABI "ANY" "ANY" "ANY")
+    # find_package(Python3 COMPONENTS Interpreter Development)
+  # ELSE(APPLE)
+    find_package(PythonLibs REQUIRED)
+  # ENDIF(APPLE)
+
   find_package(SWIG REQUIRED)
   find_package(NumPy REQUIRED)
   include (${SWIG_USE_FILE})
@@ -108,6 +123,7 @@ if(WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON)
 
 	# Wrapping part for Python
 	if (WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON AND SWIG_FOUND)   
+
 	  # Set module extension, platform specific
 	  if(WIN32)
 		set(module_extension ".pyd")
@@ -119,26 +135,60 @@ if(WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON)
 	  
 	  set_source_files_properties(multiresolutionimageinterface.i PROPERTIES CPLUSPLUS ON)
 	  set_source_files_properties(multiresolutionimageinterface.i PROPERTIES SWIG_FLAGS "-builtin")
-      if(PYTHONLIBS_VERSION_STRING MATCHES "3.?")
-	      set_property(SOURCE multiresolutionimageinterface.i PROPERTY SWIG_FLAGS "-py3")
-      endif(PYTHONLIBS_VERSION_STRING MATCHES "3.?")
+
+	  if(PYTHONLIBS_VERSION_STRING MATCHES "3.?")
+		  set_property(SOURCE multiresolutionimageinterface.i PROPERTY SWIG_FLAGS "-py3")
+	  endif(PYTHONLIBS_VERSION_STRING MATCHES "3.?")
 
 	  swig_add_library(multiresolutionimageinterface LANGUAGE python SOURCES multiresolutionimageinterface.i)
 	  swig_link_libraries(multiresolutionimageinterface multiresolutionimageinterface annotation core) 
-	  swig_link_libraries(multiresolutionimageinterface ${PYTHON_LIBRARIES} ${PYTHON_DEBUG_LIBRARIES})
-      target_include_directories(${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${Boost_INCLUDE_DIRS} ${DIAGPathology_BINARY_DIR}/annotation ${PYTHON_INCLUDE_DIR} ${PYTHON_NUMPY_INCLUDE_DIR})
+
+	  IF(APPLE)
+	    # Relevant CMake discussions:
+	    # https://gitlab.kitware.com/cmake/cmake/-/issues/17664#note_643333
+	    # https://gitlab.kitware.com/cmake/cmake/-/issues/18100
+	    # Finally used:
+	    # https://gitlab.kitware.com/cmake/cmake/-/issues/18536
+	    # We need to weakly link to Python, otherwise the linker will add a hardlink to the python
+	    # used during compiling. This will make the library not work for other people / other Python versions.
+	    #
+	    macro( target_link_libraries_with_dynamic_lookup target )
+	      if ( ${CMAKE_SYSTEM_NAME} MATCHES "Darwin" )
+		set_target_properties( ${target} PROPERTIES LINK_FLAGS "-undefined dynamic_lookup" )
+	      else()
+		target_link_libraries ( ${target} ${ARGN}  )
+	      endif()
+	    endmacro()
+
+	    target_link_libraries_with_dynamic_lookup(${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME} ${PYTHON_LIBRARIES})
+	  ELSE(APPLE)
+	    swig_link_libraries(multiresolutionimageinterface ${PYTHON_LIBRARIES} ${PYTHON_DEBUG_LIBRARIES})
+	  ENDIF(APPLE)
+
+	  target_include_directories(${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${Boost_INCLUDE_DIRS} ${DIAGPathology_BINARY_DIR}/annotation ${PYTHON_INCLUDE_DIR} ${PYTHON_NUMPY_INCLUDE_DIR})
 	  set_target_properties(${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME} PROPERTIES FOLDER multiresolutionimageinterface)
 	  set_target_properties(${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME} PROPERTIES DEBUG_POSTFIX _d)
-	  
-	  # Cross-platform copying and installing instructions
-	  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/multiresolutionimageinterface.py DESTINATION bin)
 
-      install(TARGETS ${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME}
-	  	EXPORT asap-targets
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION bin
-        ARCHIVE DESTINATION lib
-      )
+    # Cross-platform copying and installing instructions
+    IF(APPLE)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/multiresolutionimageinterface.py DESTINATION ${INSTALL_RUNTIME_DIR})
+        install(TARGETS ${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME}
+        EXPORT asap-targets
+          RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
+          LIBRARY DESTINATION ${INSTALL_RUNTIME_DIR}
+          ARCHIVE DESTINATION ${INSTALL_RESOURCE_DIR}
+        )
+
+    ELSE(APPLE)
+	      install(FILES ${CMAKE_CURRENT_BINARY_DIR}/multiresolutionimageinterface.py DESTINATION bin)
+
+        install(TARGETS ${SWIG_MODULE_multiresolutionimageinterface_REAL_NAME}
+        EXPORT asap-targets
+          RUNTIME DESTINATION bin
+          LIBRARY DESTINATION bin
+          ARCHIVE DESTINATION lib
+        )
+      ENDIF(APPLE)
 	endif(WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON AND SWIG_FOUND)  
 endif(WRAP_MULTIRESOLUTIONIMAGEINTERFACE_PYTHON)
 
@@ -149,23 +199,50 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/multiresolutionimageinterface_export.h
 install(FILES ${EXTERNAL_OPENSLIDE_HS} DESTINATION include/multiresolutionimageinterface)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/openslidefileformat_export.h DESTINATION include/multiresolutionimageinterface)
 
-install(TARGETS multiresolutionimageinterface
-  EXPORT asap-targets
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-)
+IF(APPLE)
 
-install(TARGETS jpeg2kcodec
-  EXPORT asap-targets
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-)
+  install(TARGETS multiresolutionimageinterface
+    EXPORT asap-targets
+    RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
+    LIBRARY DESTINATION ${INSTALL_RESOURCE_DIR}
+    ARCHIVE DESTINATION ${INSTALL_RESOURCE_DIR}
+  )
 
-install(TARGETS openslidefileformat
-  EXPORT asap-targets
-  RUNTIME DESTINATION bin/formats
-  LIBRARY DESTINATION bin/formats
-  ARCHIVE DESTINATION lib
-)
+  install(TARGETS jpeg2kcodec
+    EXPORT asap-targets
+    RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
+    LIBRARY DESTINATION ${INSTALL_RESOURCE_DIR}
+    ARCHIVE DESTINATION ${INSTALL_RESOURCE_DIR}
+  )
+
+  install(TARGETS openslidefileformat
+    EXPORT asap-targets
+    RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}/formats
+    LIBRARY DESTINATION ${INSTALL_RUNTIME_DIR}/formats
+    ARCHIVE DESTINATION ${INSTALL_RESOURCE_DIR}
+  )
+
+ELSE(APPLE)
+
+  install(TARGETS multiresolutionimageinterface
+    EXPORT asap-targets
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+  )
+
+  install(TARGETS jpeg2kcodec
+    EXPORT asap-targets
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+  )
+
+  install(TARGETS openslidefileformat
+    EXPORT asap-targets
+    RUNTIME DESTINATION bin/formats
+    LIBRARY DESTINATION bin/formats
+    ARCHIVE DESTINATION lib
+  )
+
+ENDIF(APPLE)

@@ -26,12 +26,26 @@ ENDIF(WIN32)
 install(FILES ConnectedComponentsWholeSlideFilter.h DistanceTransformWholeSlideFilter.h LabelStatisticsWholeSlideFilter.h ThresholdWholeSlideFilter.h ArithmeticWholeSlideFilter.h DESTINATION include/imgproc/wholeslidefilters)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wholeslidefilters_export.h DESTINATION include/imgproc/wholeslidefilters)
 
-install(TARGETS wholeslidefilters
-        EXPORT asap-targets
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib
-)
+IF(APPLE)
+  set(prefix "ASAP.app/Contents")
+  set(INSTALL_RUNTIME_DIR "${prefix}/MacOS")
+  set(INSTALL_RESOURCE_DIR "${prefix}/Frameworks")
+  set(INSTALL_CMAKE_DIR "${prefix}/Resources")
+
+  install(TARGETS wholeslidefilters
+          EXPORT asap-targets
+          RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
+          LIBRARY DESTINATION ${INSTALL_RESOURCE_DIR}
+          ARCHIVE DESTINATION ${INSTALL_RESOURCE_DIR}
+  )
+ELSE(APPLE)
+  install(TARGETS wholeslidefilters
+          EXPORT asap-targets
+          RUNTIME DESTINATION bin
+          LIBRARY DESTINATION lib
+          ARCHIVE DESTINATION lib
+  )
+ENDIF(APPLE)
 
 OPTION(WRAP_WHOLESLIDEFILTERS_PYTHON "Wrap whole slide image processing in Python" OFF)
 
@@ -67,7 +81,22 @@ IF(WRAP_WHOLESLIDEFILTERS_PYTHON)
 	  set_target_properties(${SWIG_MODULE_wholeslidefilters_REAL_NAME} PROPERTIES DEBUG_POSTFIX _d)
 	  
 	  # Cross-platform copying and installing instructions
-	  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wholeslidefilters.py DESTINATION bin)
+    IF(APPLE)
+      set(prefix "ASAP.app/Contents")
+      set(INSTALL_RUNTIME_DIR "${prefix}/MacOS")
+      set(INSTALL_RESOURCE_DIR "${prefix}/Frameworks")
+      set(INSTALL_CMAKE_DIR "${prefix}/Resources")
+
+      install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wholeslidefilters.py DESTINATION ${INSTALL_RUNTIME_DIR})
+
+      INSTALL(TARGETS ${SWIG_MODULE_wholeslidefilters_REAL_NAME}
+            EXPORT asap-targets
+              RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
+              LIBRARY DESTINATION ${INSTALL_RUNTIME_DIR}
+              ARCHIVE DESTINATION ${INSTALL_RESOURCE_DIR}
+      )
+    ELSE(APPLE)
+	    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wholeslidefilters.py DESTINATION bin)
 
       INSTALL(TARGETS ${SWIG_MODULE_wholeslidefilters_REAL_NAME}
 	  	      EXPORT asap-targets
@@ -75,5 +104,7 @@ IF(WRAP_WHOLESLIDEFILTERS_PYTHON)
               LIBRARY DESTINATION bin
               ARCHIVE DESTINATION lib
       )
+
+    ENDIF(APPLE)
 	ENDIF(WRAP_WHOLESLIDEFILTERS_PYTHON AND SWIG_FOUND)  
 ENDIF(WRAP_WHOLESLIDEFILTERS_PYTHON)
